@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>食券カウントシステム</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+
+<h2>食券カウント</h2>
+<p>読み取り済：<span id="count">--</span> 枚</p>
+
+<div id="reader" style="width:300px;"></div>
+<p id="msg"></p>
+
+<script>
+// ▼ Firebase
+const firebaseConfig = {
+    apiKey: "YOUR_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ▼ 今日の日付
+const today = new Date().toISOString().slice(0, 10);
+
+// ▼ 使用済みカウント
+function updateCount() {
+    db.collection("tickets-" + today)
+      .where("used", "==", true)
+      .get()
+      .then(s => document.getElementById("count").textContent = s.size);
+}
+updateCount();
+
+// ▼ QR 読み取り
+function onScanSuccess(ticketId) {
+    const msg = document.getElementById("msg");
+
+    const ref = db.collection("tickets-" + today).doc(ticketId);
+
+    ref.get().then(doc => {
+        if (!doc.exists) {
+            msg.textContent = "❌ 無効なQRコードです";
+            return;
+        }
+
+        if (doc.data().used) {
+            msg.textContent = "⚠️ すでに使用済み";
+            return;
+        }
+
+        ref.update({ used: true });
+        msg.textContent = "✅ 有効 → 使用済みに更新しました";
+        updateCount();
+    });
+}
+
+new Html5Qrcode("reader").start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    onScanSuccess
+);
+</script>
+
+</body>
+</html>
