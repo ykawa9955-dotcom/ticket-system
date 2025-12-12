@@ -8,6 +8,11 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 
+<style>
+body { font-family: sans-serif; padding:20px; }
+#qr canvas { margin-top:20px; }
+button { padding:10px 20px; font-size:18px; }
+</style>
 </head>
 <body>
 
@@ -18,7 +23,7 @@
 <div id="qr"></div>
 
 <script>
-// ▼▼ Firebase の設定（あなたのプロジェクト情報に置き換え）
+// ▼ Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
   authDomain: "ticket-system-acabc.firebaseapp.com",
@@ -30,10 +35,10 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// ▼ 今日の日付文字列
+// ▼ 今日の日付
 const today = new Date().toISOString().slice(0, 10);
 
-// ▼ 発行数を表示
+// ▼ 発行数の表示
 function updateCount() {
     db.collection("tickets-" + today)
       .get()
@@ -41,9 +46,10 @@ function updateCount() {
 }
 updateCount();
 
-// ▼ 食券発行
+// ▼ 食券発行ボタン
 document.getElementById("issueBtn").onclick = async () => {
-    // Firestore に「未使用」で登録
+
+    // Firestore に未使用券を保存
     const ref = await db.collection("tickets-" + today).add({
         used: false,
         created: new Date(),
@@ -51,9 +57,9 @@ document.getElementById("issueBtn").onclick = async () => {
 
     const ticketId = ref.id;
 
-    // QRコード生成（ticketId を埋め込む）
+    // QR コード表示（ticketId を埋め込む）
     document.getElementById("qr").innerHTML = "";
-    QRCode.toCanvas(ticketId, { width:250 }, (err, canvas) => {
+    QRCode.toCanvas(ticketId, { width: 250 }, (err, canvas) => {
         document.getElementById("qr").appendChild(canvas);
     });
 
