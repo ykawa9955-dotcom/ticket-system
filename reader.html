@@ -7,13 +7,18 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body { font-family: sans-serif; padding:20px; }
+#msg { margin-top:20px; font-size: 18px; }
+</style>
 </head>
 <body>
 
 <h2>食券カウント</h2>
 <p>読み取り済：<span id="count">--</span> 枚</p>
 
-<div id="reader" style="width:300px;"></div>
+<div id="reader" style="width:300px; margin-top:20px;"></div>
 <p id="msg"></p>
 
 <script>
@@ -41,7 +46,7 @@ function updateCount() {
 }
 updateCount();
 
-// ▼ QR 読み取り
+// ▼ QR読み取り
 function onScanSuccess(ticketId) {
     const msg = document.getElementById("msg");
 
@@ -59,11 +64,12 @@ function onScanSuccess(ticketId) {
         }
 
         ref.update({ used: true });
-        msg.textContent = "✅ 有効 → 使用済みに更新しました";
+        msg.textContent = "✅ 有効 → 使用済みに変更しました";
         updateCount();
     });
 }
 
+// QR 読み取り開始
 new Html5Qrcode("reader").start(
     { facingMode: "environment" },
     { fps: 10, qrbox: 250 },
