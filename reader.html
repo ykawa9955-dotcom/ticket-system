@@ -11,6 +11,12 @@
 body { font-family: system-ui, sans-serif; padding: 20px; }
 #reader { width: 300px; margin-top: 20px; }
 #msg { margin-top: 20px; font-size: 18px; }
+#nextBtn {
+  margin-top: 20px;
+  padding: 12px 20px;
+  font-size: 18px;
+  display: none;
+}
 </style>
 </head>
 <body>
@@ -20,6 +26,8 @@ body { font-family: system-ui, sans-serif; padding: 20px; }
 
 <div id="reader"></div>
 <p id="msg"></p>
+
+<button id="nextBtn">次のQRを読み込む</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -51,7 +59,7 @@ const db = getFirestore(app);
 const today = new Date().toISOString().slice(0, 10);
 const colRef = collection(db, "tickets-" + today);
 
-/* カウント */
+/* 使用済み枚数 */
 async function updateCount() {
   const q = query(colRef, where("used", "==", true));
   const snap = await getDocs(q);
@@ -59,20 +67,31 @@ async function updateCount() {
 }
 updateCount();
 
-/* ====== 再読防止の核心 ====== */
+/* ===== QR制御 ===== */
+const html5QrCode = new Html5Qrcode("reader");
 let locked = false;
 let lastCode = null;
 
+async function startScanner() {
+  locked = false;
+  lastCode = null;
+  document.getElementById("msg").textContent = "";
+  document.getElementById("nextBtn").style.display = "none";
+
+  await html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    onScanSuccess
+  );
+}
+
 /* QR成功時 */
 async function onScanSuccess(decodedText) {
-
-  // ★ 完全ロック（最初の1行が超重要）
   if (locked || decodedText === lastCode) return;
   locked = true;
   lastCode = decodedText;
 
-  // ★ 即カメラ停止（Firestore前）
-  try { await html5QrCode.stop(); } catch {}
+  await html5QrCode.stop();
 
   const msg = document.getElementById("msg");
   const ref = doc(colRef, decodedText);
@@ -82,31 +101,30 @@ async function onScanSuccess(decodedText) {
 
     if (!snap.exists()) {
       msg.textContent = "❌ 無効なQRコードです";
-      return;
-    }
-
-    if (snap.data().used) {
+    } else if (snap.data().used) {
       msg.textContent = "⚠️ すでに使用済みです";
-      return;
+    } else {
+      await updateDoc(ref, { used: true });
+      msg.textContent = "✅ 有効 → 使用済みにしました";
+      updateCount();
     }
-
-    await updateDoc(ref, { used: true });
-    msg.textContent = "✅ 有効 → 使用済みにしました";
-    updateCount();
 
   } catch (e) {
     msg.textContent = "エラー：" + e.message;
     console.error(e);
   }
+
+  // 次のQRボタン表示
+  document.getElementById("nextBtn").style.display = "inline-block";
 }
 
-/* 起動 */
-const html5QrCode = new Html5Qrcode("reader");
-html5QrCode.start(
-  { facingMode: "environment" },
-  { fps: 10, qrbox: 250 },
-  onScanSuccess
-);
+/* 次のQRボタン */
+document.getElementById("nextBtn").addEventListener("click", () => {
+  startScanner();
+});
+
+/* 初回起動 */
+startScanner();
 </script>
 
 </body>
