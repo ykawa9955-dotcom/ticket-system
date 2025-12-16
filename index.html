@@ -17,8 +17,15 @@ button {
   font-size: 18px;
   padding: 10px 20px;
 }
+button:disabled {
+  opacity: 0.5;
+}
 #qr canvas {
   margin-top: 20px;
+}
+#msg {
+  margin-top: 15px;
+  font-size: 16px;
 }
 </style>
 </head>
@@ -26,71 +33,95 @@ button {
 
 <h2>無料食券 発行ページ</h2>
 <p>本日の発行枚数：<span id="count">--</span> 枚</p>
+
 <button id="issueBtn">食券を発行</button>
+<p id="msg"></p>
 
 <div id="qr"></div>
 
-<!-- Firebase v10（モジュール版） -->
 <script type="module">
-  // Firebase SDK
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import {
-    getFirestore,
-    collection,
-    addDoc,
-    getDocs,
-    serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+/* Firebase SDK */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  // ▼ Firebase 設定（あなたのプロジェクト）
-  const firebaseConfig = {
-    apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
-    authDomain: "ticket-system-acabc.firebaseapp.com",
-    projectId: "ticket-system-acabc",
-    storageBucket: "ticket-system-acabc.firebasestorage.app",
-    messagingSenderId: "738817015202",
-    appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
-  };
+/* Firebase 設定 */
+const firebaseConfig = {
+  apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
+  authDomain: "ticket-system-acabc.firebaseapp.com",
+  projectId: "ticket-system-acabc",
+  storageBucket: "ticket-system-acabc.firebasestorage.app",
+  messagingSenderId: "738817015202",
+  appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
+};
 
-  // Firebase 初期化
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+/* 初期化 */
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-  // 今日の日付（YYYY-MM-DD）
-  const today = new Date().toISOString().slice(0, 10);
-  const colRef = collection(db, "tickets-" + today);
+/* 今日の日付 */
+const today = new Date().toISOString().slice(0, 10);
+const colRef = collection(db, "tickets-" + today);
 
-  // 発行枚数を取得
-  async function updateCount() {
-    const snapshot = await getDocs(colRef);
-    document.getElementById("count").textContent = snapshot.size;
+/* ===== 1日1回制限（端末） ===== */
+const storageKey = "issued-" + today;
+const issueBtn = document.getElementById("issueBtn");
+const msg = document.getElementById("msg");
+
+/* すでに発行済みかチェック */
+if (localStorage.getItem(storageKey)) {
+  issueBtn.disabled = true;
+  msg.textContent = "本日はすでに食券を発行しています。";
+}
+
+/* 発行枚数表示 */
+async function updateCount() {
+  const snapshot = await getDocs(colRef);
+  document.getElementById("count").textContent = snapshot.size;
+}
+updateCount();
+
+/* 発行処理 */
+issueBtn.addEventListener("click", async () => {
+  try {
+    issueBtn.disabled = true;
+
+    // Firestore に保存
+    const docRef = await addDoc(colRef, {
+      used: false,
+      created: serverTimestamp()
+    });
+
+    // localStorage に記録（←核心）
+    localStorage.setItem(storageKey, "true");
+
+    const ticketId = docRef.id;
+
+    // QRコード表示
+    document.getElementById("qr").innerHTML = "";
+    QRCode.toCanvas(ticketId, { width: 250 }, (err, canvas) => {
+      if (err) {
+        alert("QR生成エラー");
+        issueBtn.disabled = false;
+        return;
+      }
+      document.getElementById("qr").appendChild(canvas);
+    });
+
+    msg.textContent = "本日の食券を発行しました。";
+    updateCount();
+
+  } catch (e) {
+    alert("発行エラー：" + e.message);
+    console.error(e);
+    issueBtn.disabled = false;
   }
-  updateCount();
-
-  // 発行ボタン
-  document.getElementById("issueBtn").addEventListener("click", async () => {
-    try {
-      // Firestore に未使用チケットを保存
-      const docRef = await addDoc(colRef, {
-        used: false,
-        created: serverTimestamp()
-      });
-
-      const ticketId = docRef.id;
-
-      // QRコード表示
-      document.getElementById("qr").innerHTML = "";
-      QRCode.toCanvas(ticketId, { width: 250 }, (err, canvas) => {
-        if (err) return alert("QR生成エラー");
-        document.getElementById("qr").appendChild(canvas);
-      });
-
-      updateCount();
-    } catch (e) {
-      alert("発行エラー：" + e.message);
-      console.error(e);
-    }
-  });
+});
 </script>
 
 </body>
