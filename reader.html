@@ -3,78 +3,108 @@
 <head>
 <meta charset="UTF-8">
 <title>食券カウントシステム</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
+<!-- QRリーダー -->
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <style>
-body { font-family: sans-serif; padding:20px; }
-#msg { margin-top:20px; font-size: 18px; }
+body {
+  font-family: system-ui, sans-serif;
+  padding: 20px;
+}
+#reader {
+  width: 300px;
+  margin-top: 20px;
+}
+#msg {
+  margin-top: 20px;
+  font-size: 18px;
+}
 </style>
 </head>
 <body>
 
 <h2>食券カウント</h2>
-<p>読み取り済：<span id="count">--</span> 枚</p>
+<p>本日の使用済み：<span id="count">--</span> 枚</p>
 
-<div id="reader" style="width:300px; margin-top:20px;"></div>
+<div id="reader"></div>
 <p id="msg"></p>
 
-<script>
-// ▼ Firebase
-const firebaseConfig = {
-  apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
-  authDomain: "ticket-system-acabc.firebaseapp.com",
-  projectId: "ticket-system-acabc",
-  storageBucket: "ticket-system-acabc.firebasestorage.app",
-  messagingSenderId: "738817015202",
-  appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+<script type="module">
+  // Firebase SDK
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import {
+    getFirestore,
+    collection,
+    doc,
+    getDoc,
+    updateDoc,
+    getDocs,
+    query,
+    where
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// ▼ 今日の日付
-const today = new Date().toISOString().slice(0, 10);
+  // ▼ Firebase 設定
+  const firebaseConfig = {
+    apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
+    authDomain: "ticket-system-acabc.firebaseapp.com",
+    projectId: "ticket-system-acabc",
+    storageBucket: "ticket-system-acabc.firebasestorage.app",
+    messagingSenderId: "738817015202",
+    appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
+  };
 
-// ▼ 使用済みカウント
-function updateCount() {
-    db.collection("tickets-" + today)
-      .where("used", "==", true)
-      .get()
-      .then(s => document.getElementById("count").textContent = s.size);
-}
-updateCount();
+  // 初期化
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
 
-// ▼ QR読み取り
-function onScanSuccess(ticketId) {
+  // 今日の日付
+  const today = new Date().toISOString().slice(0, 10);
+  const colRef = collection(db, "tickets-" + today);
+
+  // 使用済み枚数
+  async function updateCount() {
+    const q = query(colRef, where("used", "==", true));
+    const snapshot = await getDocs(q);
+    document.getElementById("count").textContent = snapshot.size;
+  }
+  updateCount();
+
+  // QR読み取り成功時
+  async function onScanSuccess(decodedText) {
     const msg = document.getElementById("msg");
+    const ref = doc(colRef, decodedText);
 
-    const ref = db.collection("tickets-" + today).doc(ticketId);
+    try {
+      const snap = await getDoc(ref);
 
-    ref.get().then(doc => {
-        if (!doc.exists) {
-            msg.textContent = "❌ 無効なQRコードです";
-            return;
-        }
+      if (!snap.exists()) {
+        msg.textContent = "❌ 無効なQRコードです";
+        return;
+      }
 
-        if (doc.data().used) {
-            msg.textContent = "⚠️ すでに使用済み";
-            return;
-        }
+      if (snap.data().used) {
+        msg.textContent = "⚠️ すでに使用済みです";
+        return;
+      }
 
-        ref.update({ used: true });
-        msg.textContent = "✅ 有効 → 使用済みに変更しました";
-        updateCount();
-    });
-}
+      await updateDoc(ref, { used: true });
+      msg.textContent = "✅ 有効 → 使用済みにしました";
+      updateCount();
+    } catch (e) {
+      msg.textContent = "エラー：" + e.message;
+      console.error(e);
+    }
+  }
 
-// QR 読み取り開始
-new Html5Qrcode("reader").start(
+  // QRリーダー起動
+  const html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start(
     { facingMode: "environment" },
     { fps: 10, qrbox: 250 },
     onScanSuccess
-);
+  );
 </script>
 
 </body>
