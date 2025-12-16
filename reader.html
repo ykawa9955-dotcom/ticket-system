@@ -71,8 +71,14 @@ body {
   }
   updateCount();
 
+  // ★ 二重読み取り防止フラグ
+  let scanning = true;
+
   // QR読み取り成功時
   async function onScanSuccess(decodedText) {
+    if (!scanning) return;   // ★ 2回目以降は無視
+    scanning = false;        // ★ ロック
+
     const msg = document.getElementById("msg");
     const ref = doc(colRef, decodedText);
 
@@ -92,6 +98,10 @@ body {
       await updateDoc(ref, { used: true });
       msg.textContent = "✅ 有効 → 使用済みにしました";
       updateCount();
+
+      // ★ 読み取り停止（最重要）
+      await html5QrCode.stop();
+
     } catch (e) {
       msg.textContent = "エラー：" + e.message;
       console.error(e);
