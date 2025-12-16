@@ -5,22 +5,12 @@
 <title>食券カウントシステム</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- QRリーダー -->
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <style>
-body {
-  font-family: system-ui, sans-serif;
-  padding: 20px;
-}
-#reader {
-  width: 300px;
-  margin-top: 20px;
-}
-#msg {
-  margin-top: 20px;
-  font-size: 18px;
-}
+body { font-family: system-ui, sans-serif; padding: 20px; }
+#reader { width: 300px; margin-top: 20px; }
+#msg { margin-top: 20px; font-size: 18px; }
 </style>
 </head>
 <body>
@@ -32,89 +22,91 @@ body {
 <p id="msg"></p>
 
 <script type="module">
-  // Firebase SDK
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import {
-    getFirestore,
-    collection,
-    doc,
-    getDoc,
-    updateDoc,
-    getDocs,
-    query,
-    where
-  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  updateDoc,
+  getDocs,
+  query,
+  where
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  // ▼ Firebase 設定
-  const firebaseConfig = {
-    apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
-    authDomain: "ticket-system-acabc.firebaseapp.com",
-    projectId: "ticket-system-acabc",
-    storageBucket: "ticket-system-acabc.firebasestorage.app",
-    messagingSenderId: "738817015202",
-    appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
-  };
+/* Firebase */
+const firebaseConfig = {
+  apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
+  authDomain: "ticket-system-acabc.firebaseapp.com",
+  projectId: "ticket-system-acabc",
+  storageBucket: "ticket-system-acabc.firebasestorage.app",
+  messagingSenderId: "738817015202",
+  appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
+};
 
-  // 初期化
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-  // 今日の日付
-  const today = new Date().toISOString().slice(0, 10);
-  const colRef = collection(db, "tickets-" + today);
+/* 日付 */
+const today = new Date().toISOString().slice(0, 10);
+const colRef = collection(db, "tickets-" + today);
 
-  // 使用済み枚数
-  async function updateCount() {
-    const q = query(colRef, where("used", "==", true));
-    const snapshot = await getDocs(q);
-    document.getElementById("count").textContent = snapshot.size;
-  }
-  updateCount();
+/* カウント */
+async function updateCount() {
+  const q = query(colRef, where("used", "==", true));
+  const snap = await getDocs(q);
+  document.getElementById("count").textContent = snap.size;
+}
+updateCount();
 
-  // ★ 二重読み取り防止フラグ
-  let scanning = true;
+/* ====== 再読防止の核心 ====== */
+let locked = false;
+let lastCode = null;
 
-  // QR読み取り成功時
-  async function onScanSuccess(decodedText) {
-    if (!scanning) return;   // ★ 2回目以降は無視
-    scanning = false;        // ★ ロック
+/* QR成功時 */
+async function onScanSuccess(decodedText) {
 
-    const msg = document.getElementById("msg");
-    const ref = doc(colRef, decodedText);
+  // ★ 完全ロック（最初の1行が超重要）
+  if (locked || decodedText === lastCode) return;
+  locked = true;
+  lastCode = decodedText;
 
-    try {
-      const snap = await getDoc(ref);
+  // ★ 即カメラ停止（Firestore前）
+  try { await html5QrCode.stop(); } catch {}
 
-      if (!snap.exists()) {
-        msg.textContent = "❌ 無効なQRコードです";
-        return;
-      }
+  const msg = document.getElementById("msg");
+  const ref = doc(colRef, decodedText);
 
-      if (snap.data().used) {
-        msg.textContent = "⚠️ すでに使用済みです";
-        return;
-      }
+  try {
+    const snap = await getDoc(ref);
 
-      await updateDoc(ref, { used: true });
-      msg.textContent = "✅ 有効 → 使用済みにしました";
-      updateCount();
-
-      // ★ 読み取り停止（最重要）
-      await html5QrCode.stop();
-
-    } catch (e) {
-      msg.textContent = "エラー：" + e.message;
-      console.error(e);
+    if (!snap.exists()) {
+      msg.textContent = "❌ 無効なQRコードです";
+      return;
     }
-  }
 
-  // QRリーダー起動
-  const html5QrCode = new Html5Qrcode("reader");
-  html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
-    onScanSuccess
-  );
+    if (snap.data().used) {
+      msg.textContent = "⚠️ すでに使用済みです";
+      return;
+    }
+
+    await updateDoc(ref, { used: true });
+    msg.textContent = "✅ 有効 → 使用済みにしました";
+    updateCount();
+
+  } catch (e) {
+    msg.textContent = "エラー：" + e.message;
+    console.error(e);
+  }
+}
+
+/* 起動 */
+const html5QrCode = new Html5Qrcode("reader");
+html5QrCode.start(
+  { facingMode: "environment" },
+  { fps: 10, qrbox: 250 },
+  onScanSuccess
+);
 </script>
 
 </body>
