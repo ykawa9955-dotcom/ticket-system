@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>管理者ダッシュボード</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+  font-family: system-ui, sans-serif;
+  padding: 20px;
+  background: #f7f7f7;
+}
+.card {
+  background: #fff;
+  padding: 20px;
+  margin-bottom: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+h1 {
+  margin-bottom: 20px;
+}
+.count {
+  font-size: 32px;
+  font-weight: bold;
+}
+.label {
+  font-size: 16px;
+  color: #666;
+}
+</style>
+</head>
+<body>
+
+<h1>📊 管理者ダッシュボード</h1>
+<p>日付：<strong id="date">--</strong></p>
+
+<div class="card">
+  <div class="label">発行枚数</div>
+  <div class="count" id="issued">--</div>
+</div>
+
+<div class="card">
+  <div class="label">使用済み</div>
+  <div class="count" id="used">--</div>
+</div>
+
+<div class="card">
+  <div class="label">未使用</div>
+  <div class="count" id="unused">--</div>
+</div>
+
+<script type="module">
+/* Firebase SDK */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  getDocs,
+  query,
+  where
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+/* Firebase 設定 */
+const firebaseConfig = {
+  apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
+  authDomain: "ticket-system-acabc.firebaseapp.com",
+  projectId: "ticket-system-acabc",
+  storageBucket: "ticket-system-acabc.firebasestorage.app",
+  messagingSenderId: "738817015202",
+  appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
+};
+
+/* 初期化 */
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+/* ===== 日本時間の日付 ===== */
+function getJSTDate() {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
+
+const today = getJSTDate();
+document.getElementById("date").textContent = today;
+
+/* Firestore コレクション */
+const colRef = collection(db, "tickets-" + today);
+
+/* データ取得 */
+async function loadDashboard() {
+  const allSnap = await getDocs(colRef);
+  const usedSnap = await getDocs(query(colRef, where("used", "==", true)));
+
+  const issued = allSnap.size;
+  const used = usedSnap.size;
+  const unused = issued - used;
+
+  document.getElementById("issued").textContent = issued;
+  document.getElementById("used").textContent = used;
+  document.getElementById("unused").textContent = unused;
+}
+
+loadDashboard();
+</script>
+
+</body>
+</html>
