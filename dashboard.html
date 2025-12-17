@@ -5,6 +5,9 @@
 <title>管理者ダッシュボード</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<!-- QRコード生成 -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
 <style>
 body {
   font-family: system-ui, sans-serif;
@@ -35,7 +38,13 @@ input[type="date"] {
 button {
   font-size: 16px;
   padding: 6px 12px;
-  margin-left: 8px;
+  margin-top: 8px;
+}
+#qr canvas {
+  margin-top: 15px;
+}
+#msg {
+  margin-top: 10px;
 }
 </style>
 </head>
@@ -64,6 +73,13 @@ button {
   <div class="count" id="unused">--</div>
 </div>
 
+<div class="card">
+  <h3>🧑‍💼 代理発行</h3>
+  <button id="adminIssueBtn">代理で食券を発行</button>
+  <p id="msg"></p>
+  <div id="qr"></div>
+</div>
+
 <script type="module">
 /* Firebase SDK */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -72,7 +88,9 @@ import {
   collection,
   getDocs,
   query,
-  where
+  where,
+  addDoc,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 /* Firebase 設定 */
@@ -88,18 +106,25 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ===== 日本時間で今日の日付 ===== */
+/* ===== 日本時間で今日 ===== */
 function getJSTDate() {
   const now = new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 10);
 }
 
-/* 初期日付をセット */
+/* DOM */
 const datePicker = document.getElementById("datePicker");
+const issuedEl = document.getElementById("issued");
+const usedEl = document.getElementById("used");
+const unusedEl = document.getElementById("unused");
+const msgEl = document.getElementById("msg");
+const qrEl = document.getElementById("qr");
+
+/* 初期日付 */
 datePicker.value = getJSTDate();
 
-/* データ読み込み */
+/* ダッシュボード読み込み */
 async function loadDashboard(date) {
   const colRef = collection(db, "tickets-" + date);
 
@@ -110,16 +135,50 @@ async function loadDashboard(date) {
 
   const issued = allSnap.size;
   const used = usedSnap.size;
-  const unused = issued - used;
 
-  document.getElementById("issued").textContent = issued;
-  document.getElementById("used").textContent = used;
-  document.getElementById("unused").textContent = unused;
+  issuedEl.textContent = issued;
+  usedEl.textContent = used;
+  unusedEl.textContent = issued - used;
 }
 
-/* ボタン */
+/* 表示ボタン */
 document.getElementById("loadBtn").addEventListener("click", () => {
   loadDashboard(datePicker.value);
+  qrEl.innerHTML = "";
+  msgEl.textContent = "";
+});
+
+/* ===== 代理発行 ===== */
+document.getElementById("adminIssueBtn").addEventListener("click", async () => {
+  const date = datePicker.value;
+  const colRef = collection(db, "tickets-" + date);
+
+  try {
+    const docRef = await addDoc(colRef, {
+      used: false,
+      adminIssued: true,
+      created: serverTimestamp()
+    });
+
+    const ticketId = docRef.id;
+
+    // QR表示
+    qrEl.innerHTML = "";
+    QRCode.toCanvas(ticketId, { width: 250 }, (err, canvas) => {
+      if (err) {
+        msgEl.textContent = "QR生成エラー";
+        return;
+      }
+      qrEl.appendChild(canvas);
+    });
+
+    msgEl.textContent = "代理発行しました（このQRは当日有効）";
+    loadDashboard(date);
+
+  } catch (e) {
+    msgEl.textContent = "エラー：" + e.message;
+    console.error(e);
+  }
 });
 
 /* 初回表示 */
