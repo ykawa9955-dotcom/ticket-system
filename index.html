@@ -45,21 +45,22 @@ button:disabled {
 ================================ */
 function getTodayJST() {
   const now = new Date();
-  return (
-    now.getFullYear() + "-" +
-    String(now.getMonth() + 1).padStart(2, "0") + "-" +
-    String(now.getDate()).padStart(2, "0")
-  );
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
 }
 
 /* ===============================
    localStorage 自動掃除
-   issued-YYYY-MM-DD 系のみ対象
+   issued-* / ticket-* のみ対象
 ================================ */
 function cleanupLocalStorage(today) {
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i);
-    if (key && key.startsWith("issued-") && !key.endsWith(today)) {
+    if (
+      key &&
+      (key.startsWith("issued-") || key.startsWith("ticket-")) &&
+      !key.endsWith(today)
+    ) {
       localStorage.removeItem(key);
     }
   }
@@ -90,7 +91,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 /* ===============================
-   日付・コレクション
+   日付・初期処理
 ================================ */
 const today = getTodayJST();
 cleanupLocalStorage(today);
@@ -98,14 +99,25 @@ cleanupLocalStorage(today);
 const colRef = collection(db, "tickets-" + today);
 
 /* ===============================
-   1日1回制限（端末）
+   DOM
 ================================ */
 const issueBtn = document.getElementById("issueBtn");
 const msg = document.getElementById("msg");
-const storageKey = "issued-" + today;
+const qrDiv = document.getElementById("qr");
 
-/* すでに発行済みか */
-if (localStorage.getItem(storageKey)) {
+/* ===============================
+   1日1回制限 + QR復元
+================================ */
+const issuedKey = "issued-" + today;
+const ticketKey = "ticket-" + today;
+
+/* すでに発行済みの場合（QR復元） */
+const savedTicketId = localStorage.getItem(ticketKey);
+if (savedTicketId) {
+  issueBtn.disabled = true;
+  msg.textContent = "本日の食券は発行済みです（QRを再表示しています）";
+  restoreQR(savedTicketId);
+} else if (localStorage.getItem(issuedKey)) {
   issueBtn.disabled = true;
   msg.textContent = "本日はすでに食券を発行しています。";
 }
@@ -120,13 +132,26 @@ async function updateCount() {
 updateCount();
 
 /* ===============================
+   QR表示・復元
+================================ */
+function restoreQR(ticketId) {
+  qrDiv.innerHTML = "";
+  QRCode.toCanvas(ticketId, { width: 250 }, (err, canvas) => {
+    if (err) {
+      msg.textContent = "QR復元エラー";
+      return;
+    }
+    qrDiv.appendChild(canvas);
+  });
+}
+
+/* ===============================
    発行処理
 ================================ */
 issueBtn.addEventListener("click", async () => {
   try {
     issueBtn.disabled = true;
 
-    // Firestore に保存
     const docRef = await addDoc(colRef, {
       used: false,
       created: serverTimestamp()
@@ -134,19 +159,11 @@ issueBtn.addEventListener("click", async () => {
 
     const ticketId = docRef.id;
 
-    // localStorage に記録（今日分）
-    localStorage.setItem(storageKey, "true");
+    // localStorage に保存（核心）
+    localStorage.setItem(issuedKey, "true");
+    localStorage.setItem(ticketKey, ticketId);
 
-    // QRコード表示
-    document.getElementById("qr").innerHTML = "";
-    QRCode.toCanvas(ticketId, { width: 250 }, (err, canvas) => {
-      if (err) {
-        alert("QR生成エラー");
-        issueBtn.disabled = false;
-        return;
-      }
-      document.getElementById("qr").appendChild(canvas);
-    });
+    restoreQR(ticketId);
 
     msg.textContent = "本日の食券を発行しました。";
     updateCount();
