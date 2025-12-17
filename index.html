@@ -40,6 +40,31 @@ button:disabled {
 <div id="qr"></div>
 
 <script type="module">
+/* ===============================
+   共通ユーティリティ（JST）
+================================ */
+function getTodayJST() {
+  const now = new Date();
+  return (
+    now.getFullYear() + "-" +
+    String(now.getMonth() + 1).padStart(2, "0") + "-" +
+    String(now.getDate()).padStart(2, "0")
+  );
+}
+
+/* ===============================
+   localStorage 自動掃除
+   issued-YYYY-MM-DD 系のみ対象
+================================ */
+function cleanupLocalStorage(today) {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith("issued-") && !key.endsWith(today)) {
+      localStorage.removeItem(key);
+    }
+  }
+}
+
 /* Firebase SDK */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
@@ -64,29 +89,39 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* 今日の日付 */
-const today = new Date().toISOString().slice(0, 10);
+/* ===============================
+   日付・コレクション
+================================ */
+const today = getTodayJST();
+cleanupLocalStorage(today);
+
 const colRef = collection(db, "tickets-" + today);
 
-/* ===== 1日1回制限（端末） ===== */
-const storageKey = "issued-" + today;
+/* ===============================
+   1日1回制限（端末）
+================================ */
 const issueBtn = document.getElementById("issueBtn");
 const msg = document.getElementById("msg");
+const storageKey = "issued-" + today;
 
-/* すでに発行済みかチェック */
+/* すでに発行済みか */
 if (localStorage.getItem(storageKey)) {
   issueBtn.disabled = true;
   msg.textContent = "本日はすでに食券を発行しています。";
 }
 
-/* 発行枚数表示 */
+/* ===============================
+   発行枚数表示
+================================ */
 async function updateCount() {
   const snapshot = await getDocs(colRef);
   document.getElementById("count").textContent = snapshot.size;
 }
 updateCount();
 
-/* 発行処理 */
+/* ===============================
+   発行処理
+================================ */
 issueBtn.addEventListener("click", async () => {
   try {
     issueBtn.disabled = true;
@@ -97,10 +132,10 @@ issueBtn.addEventListener("click", async () => {
       created: serverTimestamp()
     });
 
-    // localStorage に記録（←核心）
-    localStorage.setItem(storageKey, "true");
-
     const ticketId = docRef.id;
+
+    // localStorage に記録（今日分）
+    localStorage.setItem(storageKey, "true");
 
     // QRコード表示
     document.getElementById("qr").innerHTML = "";
