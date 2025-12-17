@@ -46,6 +46,10 @@ button {
 #msg {
   margin-top: 10px;
 }
+.sub {
+  font-size: 14px;
+  color: #888;
+}
 </style>
 </head>
 <body>
@@ -58,21 +62,33 @@ button {
   <button id="loadBtn">表示</button>
 </p>
 
+<!-- 全体 -->
 <div class="card">
-  <div class="label">発行枚数</div>
+  <div class="label">発行枚数（合計）</div>
   <div class="count" id="issued">--</div>
 </div>
 
 <div class="card">
-  <div class="label">使用済み</div>
+  <div class="label">使用済み（合計）</div>
   <div class="count" id="used">--</div>
 </div>
 
 <div class="card">
-  <div class="label">未使用</div>
+  <div class="label">未使用（合計）</div>
   <div class="count" id="unused">--</div>
 </div>
 
+<!-- 管理者発行 -->
+<div class="card">
+  <div class="label">🧑‍💼 管理者発行枚数</div>
+  <div class="count" id="adminIssued">--</div>
+  <div class="sub">
+    使用済み：<span id="adminUsed">--</span> ／
+    未使用：<span id="adminUnused">--</span>
+  </div>
+</div>
+
+<!-- 代理発行 -->
 <div class="card">
   <h3>🧑‍💼 代理発行</h3>
   <button id="adminIssueBtn">代理で食券を発行</button>
@@ -106,7 +122,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ===== 日本時間で今日 ===== */
+/* 日本時間 */
 function getJSTDate() {
   const now = new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -115,40 +131,53 @@ function getJSTDate() {
 
 /* DOM */
 const datePicker = document.getElementById("datePicker");
-const issuedEl = document.getElementById("issued");
-const usedEl = document.getElementById("used");
-const unusedEl = document.getElementById("unused");
 const msgEl = document.getElementById("msg");
 const qrEl = document.getElementById("qr");
 
 /* 初期日付 */
 datePicker.value = getJSTDate();
 
-/* ダッシュボード読み込み */
+/* ダッシュボード */
 async function loadDashboard(date) {
   const colRef = collection(db, "tickets-" + date);
 
   const allSnap = await getDocs(colRef);
-  const usedSnap = await getDocs(
-    query(colRef, where("used", "==", true))
+  const usedSnap = await getDocs(query(colRef, where("used", "==", true)));
+
+  const adminAllSnap = await getDocs(
+    query(colRef, where("adminIssued", "==", true))
+  );
+  const adminUsedSnap = await getDocs(
+    query(colRef,
+      where("adminIssued", "==", true),
+      where("used", "==", true)
+    )
   );
 
   const issued = allSnap.size;
   const used = usedSnap.size;
 
-  issuedEl.textContent = issued;
-  usedEl.textContent = used;
-  unusedEl.textContent = issued - used;
+  const adminIssued = adminAllSnap.size;
+  const adminUsed = adminUsedSnap.size;
+
+  document.getElementById("issued").textContent = issued;
+  document.getElementById("used").textContent = used;
+  document.getElementById("unused").textContent = issued - used;
+
+  document.getElementById("adminIssued").textContent = adminIssued;
+  document.getElementById("adminUsed").textContent = adminUsed;
+  document.getElementById("adminUnused").textContent =
+    adminIssued - adminUsed;
 }
 
-/* 表示ボタン */
+/* 表示 */
 document.getElementById("loadBtn").addEventListener("click", () => {
   loadDashboard(datePicker.value);
   qrEl.innerHTML = "";
   msgEl.textContent = "";
 });
 
-/* ===== 代理発行 ===== */
+/* 代理発行 */
 document.getElementById("adminIssueBtn").addEventListener("click", async () => {
   const date = datePicker.value;
   const colRef = collection(db, "tickets-" + date);
@@ -162,7 +191,6 @@ document.getElementById("adminIssueBtn").addEventListener("click", async () => {
 
     const ticketId = docRef.id;
 
-    // QR表示
     qrEl.innerHTML = "";
     QRCode.toCanvas(ticketId, { width: 250 }, (err, canvas) => {
       if (err) {
@@ -172,16 +200,15 @@ document.getElementById("adminIssueBtn").addEventListener("click", async () => {
       qrEl.appendChild(canvas);
     });
 
-    msgEl.textContent = "代理発行しました（このQRは当日有効）";
+    msgEl.textContent = "代理発行しました（当日有効）";
     loadDashboard(date);
 
   } catch (e) {
     msgEl.textContent = "エラー：" + e.message;
-    console.error(e);
   }
 });
 
-/* 初回表示 */
+/* 初回 */
 loadDashboard(datePicker.value);
 </script>
 
