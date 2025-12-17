@@ -30,6 +30,32 @@ body { font-family: system-ui, sans-serif; padding: 20px; }
 <button id="nextBtn">次のQRを読み込む</button>
 
 <script type="module">
+/* ===============================
+   共通ユーティリティ（JST）
+================================ */
+function getTodayJST() {
+  const now = new Date();
+  return (
+    now.getFullYear() + "-" +
+    String(now.getMonth() + 1).padStart(2, "0") + "-" +
+    String(now.getDate()).padStart(2, "0")
+  );
+}
+
+/* ===============================
+   localStorage 自動掃除
+   （将来拡張・安全対策）
+================================ */
+function cleanupLocalStorage(today) {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith("issued-") && !key.endsWith(today)) {
+      localStorage.removeItem(key);
+    }
+  }
+}
+
+/* Firebase SDK */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
   getFirestore,
@@ -42,7 +68,7 @@ import {
   where
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* Firebase */
+/* Firebase 設定 */
 const firebaseConfig = {
   apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
   authDomain: "ticket-system-acabc.firebaseapp.com",
@@ -52,14 +78,21 @@ const firebaseConfig = {
   appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
 };
 
+/* 初期化 */
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* 日付 */
-const today = new Date().toISOString().slice(0, 10);
+/* ===============================
+   日付・コレクション（JST）
+================================ */
+const today = getTodayJST();
+cleanupLocalStorage(today);
+
 const colRef = collection(db, "tickets-" + today);
 
-/* 使用済み枚数 */
+/* ===============================
+   使用済み枚数
+================================ */
 async function updateCount() {
   const q = query(colRef, where("used", "==", true));
   const snap = await getDocs(q);
@@ -67,7 +100,9 @@ async function updateCount() {
 }
 updateCount();
 
-/* ===== QR制御 ===== */
+/* ===============================
+   QRリーダー制御
+================================ */
 const html5QrCode = new Html5Qrcode("reader");
 let locked = false;
 let lastCode = null;
@@ -85,13 +120,15 @@ async function startScanner() {
   );
 }
 
-/* QR成功時 */
+/* QR読み取り成功時 */
 async function onScanSuccess(decodedText) {
   if (locked || decodedText === lastCode) return;
+
   locked = true;
   lastCode = decodedText;
 
-  await html5QrCode.stop();
+  // 先にカメラ停止（多重発火防止）
+  try { await html5QrCode.stop(); } catch {}
 
   const msg = document.getElementById("msg");
   const ref = doc(colRef, decodedText);
@@ -114,7 +151,7 @@ async function onScanSuccess(decodedText) {
     console.error(e);
   }
 
-  // 次のQRボタン表示
+  // 次のQR読み込みボタン表示
   document.getElementById("nextBtn").style.display = "inline-block";
 }
 
