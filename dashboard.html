@@ -9,32 +9,45 @@
 body {
   font-family: system-ui, sans-serif;
   padding: 20px;
-  background: #f7f7f7;
+  background: #f5f5f5;
+}
+h1 {
+  margin-bottom: 10px;
 }
 .card {
   background: #fff;
   padding: 20px;
-  margin-bottom: 15px;
+  margin-top: 15px;
   border-radius: 8px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-h1 {
-  margin-bottom: 20px;
 }
 .count {
   font-size: 32px;
   font-weight: bold;
 }
 .label {
-  font-size: 16px;
   color: #666;
+}
+input[type="date"] {
+  font-size: 16px;
+  padding: 6px;
+}
+button {
+  font-size: 16px;
+  padding: 6px 12px;
+  margin-left: 8px;
 }
 </style>
 </head>
 <body>
 
 <h1>📊 管理者ダッシュボード</h1>
-<p>日付：<strong id="date">--</strong></p>
+
+<p>
+  日付：
+  <input type="date" id="datePicker">
+  <button id="loadBtn">表示</button>
+</p>
 
 <div class="card">
   <div class="label">発行枚数</div>
@@ -72,27 +85,28 @@ const firebaseConfig = {
   appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
 };
 
-/* 初期化 */
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ===== 日本時間の日付 ===== */
+/* ===== 日本時間で今日の日付 ===== */
 function getJSTDate() {
   const now = new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 10);
 }
 
-const today = getJSTDate();
-document.getElementById("date").textContent = today;
+/* 初期日付をセット */
+const datePicker = document.getElementById("datePicker");
+datePicker.value = getJSTDate();
 
-/* Firestore コレクション */
-const colRef = collection(db, "tickets-" + today);
+/* データ読み込み */
+async function loadDashboard(date) {
+  const colRef = collection(db, "tickets-" + date);
 
-/* データ取得 */
-async function loadDashboard() {
   const allSnap = await getDocs(colRef);
-  const usedSnap = await getDocs(query(colRef, where("used", "==", true)));
+  const usedSnap = await getDocs(
+    query(colRef, where("used", "==", true))
+  );
 
   const issued = allSnap.size;
   const used = usedSnap.size;
@@ -103,7 +117,13 @@ async function loadDashboard() {
   document.getElementById("unused").textContent = unused;
 }
 
-loadDashboard();
+/* ボタン */
+document.getElementById("loadBtn").addEventListener("click", () => {
+  loadDashboard(datePicker.value);
+});
+
+/* 初回表示 */
+loadDashboard(datePicker.value);
 </script>
 
 </body>
