@@ -11,18 +11,20 @@
 body { font-family: system-ui, sans-serif; padding: 20px; }
 #reader { width: 300px; margin-top: 20px; }
 #msg { margin-top: 20px; font-size: 18px; }
-#nextBtn {
+#nextBtn, #startBtn {
   margin-top: 20px;
   padding: 12px 20px;
   font-size: 18px;
-  display: none;
 }
+#nextBtn { display: none; }
 </style>
 </head>
 <body>
 
 <h2>食券カウント</h2>
 <p>本日の使用済み：<span id="count">--</span> 枚</p>
+
+<button id="startBtn">🔊 音を有効化して開始</button>
 
 <div id="reader"></div>
 <p id="msg"></p>
@@ -31,7 +33,60 @@ body { font-family: system-ui, sans-serif; padding: 20px; }
 
 <script type="module">
 /* ===============================
-   共通ユーティリティ（JST）
+   Audio（※ユーザー操作必須）
+================================ */
+let audioCtx = null;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  audioCtx.resume();
+}
+
+function playBeep(type = "ok") {
+  if (!audioCtx) return;
+
+  let freq = 1000;
+  let times = 1;
+
+  if (type === "ok") {
+    freq = 1200;       // 有効：高音1回
+    times = 1;
+  } else if (type === "used") {
+    freq = 400;        // 使用済み：低音2回
+    times = 2;
+  } else {
+    freq = 250;        // 無効：低音1回
+    times = 1;
+  }
+
+  let played = 0;
+
+  function beep() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.frequency.value = freq;
+    gain.gain.value = 0.25;
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    setTimeout(() => {
+      osc.stop();
+      played++;
+      if (played < times) {
+        setTimeout(beep, 150);
+      }
+    }, 150);
+  }
+  beep();
+}
+
+/* ===============================
+   日付（JST）
 ================================ */
 function getTodayJST() {
   const now = new Date();
@@ -42,55 +97,7 @@ function getTodayJST() {
   );
 }
 
-/* ===============================
-   読み取り音（音分岐対応）
-================================ */
-function playBeep(type = "ok") {
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-
-  let freq = 1000;
-  let times = 1;
-
-  if (type === "ok") {
-    freq = 1200; // 有効：高音1回
-    times = 1;
-  } else if (type === "used") {
-    freq = 400;  // 使用済み：低音2回
-    times = 2;
-  } else {
-    freq = 200;  // 無効：低音1回
-    times = 1;
-  }
-
-  let count = 0;
-
-  function beepOnce() {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    gain.gain.value = 0.2;
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    setTimeout(() => {
-      osc.stop();
-      count++;
-      if (count < times) {
-        setTimeout(beepOnce, 130); // ピッ・ピッの間隔
-      } else {
-        ctx.close();
-      }
-    }, 130);
-  }
-
-  beepOnce();
-}
-
-/* Firebase SDK */
+/* Firebase */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
   getFirestore,
@@ -103,46 +110,31 @@ import {
   where
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* Firebase 設定 */
 const firebaseConfig = {
   apiKey: "AIzaSyALuZuT-PUJ8EGVQ0FfzZvN0c2lMujjqxw",
   authDomain: "ticket-system-acabc.firebaseapp.com",
-  projectId: "ticket-system-acabc",
-  storageBucket: "ticket-system-acabc.firebasestorage.app",
-  messagingSenderId: "738817015202",
-  appId: "1:738817015202:web:aa5c5b10c55f1069cec6fb"
+  projectId: "ticket-system-acabc"
 };
 
-/* 初期化 */
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ===============================
-   日付・コレクション（JST）
-================================ */
 const today = getTodayJST();
 const colRef = collection(db, "tickets-" + today);
 
-/* ===============================
-   使用済み枚数
-================================ */
+/* 使用済み数 */
 async function updateCount() {
-  const q = query(colRef, where("used", "==", true));
-  const snap = await getDocs(q);
+  const snap = await getDocs(query(colRef, where("used", "==", true)));
   document.getElementById("count").textContent = snap.size;
 }
 updateCount();
 
-/* ===============================
-   QRリーダー制御
-================================ */
+/* QR */
 const html5QrCode = new Html5Qrcode("reader");
 let locked = false;
-let lastCode = null;
 
 async function startScanner() {
   locked = false;
-  lastCode = null;
   document.getElementById("msg").textContent = "";
   document.getElementById("nextBtn").style.display = "none";
 
@@ -153,52 +145,43 @@ async function startScanner() {
   );
 }
 
-/* QR読み取り成功時 */
-async function onScanSuccess(decodedText) {
-  if (locked || decodedText === lastCode) return;
-
+async function onScanSuccess(text) {
+  if (locked) return;
   locked = true;
-  lastCode = decodedText;
 
-  // 多重発火防止
   try { await html5QrCode.stop(); } catch {}
 
   const msg = document.getElementById("msg");
-  const ref = doc(colRef, decodedText);
+  const ref = doc(colRef, text);
 
-  try {
-    const snap = await getDoc(ref);
+  const snap = await getDoc(ref);
 
-    if (!snap.exists()) {
-      playBeep("ng");
-      msg.textContent = "❌ 無効なQRコードです";
+  if (!snap.exists()) {
+    playBeep("ng");
+    msg.textContent = "❌ 無効なQRコードです";
 
-    } else if (snap.data().used) {
-      playBeep("used"); // ★ ピッ・ピッ（低音）
-      msg.textContent = "⚠️ すでに使用済みです";
+  } else if (snap.data().used) {
+    playBeep("used"); // ★ ピッ・ピッ（低音）
+    msg.textContent = "⚠️ すでに使用済みです";
 
-    } else {
-      playBeep("ok");
-      await updateDoc(ref, { used: true });
-      msg.textContent = "✅ 有効 → 使用済みにしました";
-      updateCount();
-    }
-
-  } catch (e) {
-    msg.textContent = "エラー：" + e.message;
-    console.error(e);
+  } else {
+    playBeep("ok");
+    await updateDoc(ref, { used: true });
+    msg.textContent = "✅ 有効 → 使用済みにしました";
+    updateCount();
   }
 
   document.getElementById("nextBtn").style.display = "inline-block";
 }
 
-/* 次のQR */
-document.getElementById("nextBtn").addEventListener("click", () => {
+/* ボタン */
+document.getElementById("startBtn").addEventListener("click", async () => {
+  initAudio();
+  document.getElementById("startBtn").style.display = "none";
   startScanner();
 });
 
-/* 初回起動 */
-startScanner();
+document.getElementById("nextBtn").addEventListener("click", startScanner);
 </script>
 
 </body>
