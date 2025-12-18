@@ -43,16 +43,51 @@ function getTodayJST() {
 }
 
 /* ===============================
-   localStorage 自動掃除
-   （将来拡張・安全対策）
+   読み取り音（音分岐対応）
 ================================ */
-function cleanupLocalStorage(today) {
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith("issued-") && !key.endsWith(today)) {
-      localStorage.removeItem(key);
-    }
+function playBeep(type = "ok") {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+  let freq = 1000;
+  let times = 1;
+
+  if (type === "ok") {
+    freq = 1200; // 有効：高音1回
+    times = 1;
+  } else if (type === "used") {
+    freq = 400;  // 使用済み：低音2回
+    times = 2;
+  } else {
+    freq = 200;  // 無効：低音1回
+    times = 1;
   }
+
+  let count = 0;
+
+  function beepOnce() {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.value = 0.2;
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    setTimeout(() => {
+      osc.stop();
+      count++;
+      if (count < times) {
+        setTimeout(beepOnce, 130); // ピッ・ピッの間隔
+      } else {
+        ctx.close();
+      }
+    }, 130);
+  }
+
+  beepOnce();
 }
 
 /* Firebase SDK */
@@ -86,8 +121,6 @@ const db = getFirestore(app);
    日付・コレクション（JST）
 ================================ */
 const today = getTodayJST();
-cleanupLocalStorage(today);
-
 const colRef = collection(db, "tickets-" + today);
 
 /* ===============================
@@ -127,7 +160,7 @@ async function onScanSuccess(decodedText) {
   locked = true;
   lastCode = decodedText;
 
-  // 先にカメラ停止（多重発火防止）
+  // 多重発火防止
   try { await html5QrCode.stop(); } catch {}
 
   const msg = document.getElementById("msg");
@@ -137,10 +170,15 @@ async function onScanSuccess(decodedText) {
     const snap = await getDoc(ref);
 
     if (!snap.exists()) {
+      playBeep("ng");
       msg.textContent = "❌ 無効なQRコードです";
+
     } else if (snap.data().used) {
+      playBeep("used"); // ★ ピッ・ピッ（低音）
       msg.textContent = "⚠️ すでに使用済みです";
+
     } else {
+      playBeep("ok");
       await updateDoc(ref, { used: true });
       msg.textContent = "✅ 有効 → 使用済みにしました";
       updateCount();
@@ -151,11 +189,10 @@ async function onScanSuccess(decodedText) {
     console.error(e);
   }
 
-  // 次のQR読み込みボタン表示
   document.getElementById("nextBtn").style.display = "inline-block";
 }
 
-/* 次のQRボタン */
+/* 次のQR */
 document.getElementById("nextBtn").addEventListener("click", () => {
   startScanner();
 });
